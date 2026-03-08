@@ -2,6 +2,8 @@
 
 StockCompass is a comprehensive, AI-powered stock analysis platform featuring curated industry portfolios, stock clustering, and predictive trajectory forecasting using machine learning models.
 
+![StockCompass Preview](./preview.png)
+
 The project is divided into a **Django** backend that handles data fetching, ML modeling, and API endpoints, alongside a **Next.js** frontend showcasing a modern, glassmorphic UI.
 
 ## Prerequisites
@@ -103,7 +105,13 @@ The frontend uses environment variables to dictate base paths for API requests.
 ---
 
 ## Running Full Stack Locally
-To run the full stack during development, you will need to open **two separate terminal windows/tabs**:
+
+### Using the Automated Script (Recommended)
+You can easily start both the frontend and backend servers using the provided `run.bat` script. 
+**Important:** You must run `run.bat` as an **Administrator** for it to work properly.
+
+### Running Manually
+To run the full stack manually during development, you will need to open **two separate terminal windows/tabs**:
 1. One running the backend (`python manage.py runserver`).
 2. One running the frontend (`npm run dev`).
 
