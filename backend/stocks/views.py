@@ -1156,7 +1156,8 @@ def gold_silver_analysis(request):
     # ── Fetch current & history in parallel (10 calls → ~2-5s instead of 20-50s) ─
     from concurrent.futures import ThreadPoolExecutor as _TPE
 
-    with _TPE(max_workers=10) as _ex:
+    with _TPE(max_workers=12) as _ex:
+        f_inr_cur    = _ex.submit(_fetch_current, "INR=X")
         f_gold_cur   = _ex.submit(_fetch_current, GOLD_TICKER)
         f_silver_cur = _ex.submit(_fetch_current, SILVER_TICKER)
         f_gold_1d    = _ex.submit(_fetch_hist, GOLD_TICKER,   '1d',  '5m')
@@ -1168,8 +1169,17 @@ def gold_silver_analysis(request):
         f_silver_1y  = _ex.submit(_fetch_hist, SILVER_TICKER, '1y',  '1d')
         f_silver_5y  = _ex.submit(_fetch_hist, SILVER_TICKER, '5y',  '1wk')
 
+    inr_cur, _, _ = f_inr_cur.result()
+    inr_rate = inr_cur if inr_cur and inr_cur > 10 else 83.0
+    gram_conv = 31.1034768
+
     gold_cur, gold_chg, gold_chg_pct       = f_gold_cur.result()
     silver_cur, silver_chg, silver_chg_pct = f_silver_cur.result()
+
+    gold_cur = (gold_cur * inr_rate) / gram_conv
+    gold_chg = (gold_chg * inr_rate) / gram_conv
+    silver_cur = (silver_cur * inr_rate) / gram_conv
+    silver_chg = (silver_chg * inr_rate) / gram_conv
 
     gold_hist = {
         '1d':  f_gold_1d.result(),
@@ -1183,6 +1193,11 @@ def gold_silver_analysis(request):
         '1y':  f_silver_1y.result(),
         '5y':  f_silver_5y.result(),
     }
+
+    # Convert historical prices to INR per gram
+    for timeframe in ['1d', '1mo', '1y', '5y']:
+        for p in gold_hist[timeframe]: p['price'] = round((p['price'] * inr_rate) / gram_conv, 4)
+        for p in silver_hist[timeframe]: p['price'] = round((p['price'] * inr_rate) / gram_conv, 4)
 
     # ── Correlation (1Y aligned) ────────────────────────────────
     gold_map = {p['date']: p['price'] for p in gold_hist['1y']}
@@ -1340,14 +1355,14 @@ def gold_silver_analysis(request):
                 'current': round(gold_cur, 4),
                 'change': round(gold_chg, 4),
                 'change_percent': round(gold_chg_pct, 4),
-                'currency': 'USD',
+                'currency': 'INR',
                 'history': gold_hist,
             },
             'silver': {
                 'current': round(silver_cur, 4),
                 'change': round(silver_chg, 4),
                 'change_percent': round(silver_chg_pct, 4),
-                'currency': 'USD',
+                'currency': 'INR',
                 'history': silver_hist,
             },
         },
@@ -1564,39 +1579,57 @@ def nifty50_pca_clustering(request):
 @api_view(['GET'])
 def asset_forecast(request):
     """
-    GET /api/forecast/?ticker=BTC-USD&model=linear
-    Returns predictive trajectory: historical 60 days + 30-day forecast with CI.
-    Models supported: linear, logistic, lstm (proxy), cnn (proxy)
+    GET /api/forecast/?ticker=BTC-INR&model=linear&horizon=30d
+    Returns predictive trajectory: historical periods + forecast with CI.
+    Models supported: linear, logistic, lstm, rnn
+    Horizons supported: 1h, 1d, 3d, 30d
     """
     import yfinance as yf
     import numpy as np
     from sklearn.linear_model import LinearRegression, LogisticRegression
-    from sklearn.neural_network import MLPRegressor
     from sklearn.preprocessing import StandardScaler
     from datetime import date, timedelta
     from django.core.cache import cache
 
-    ticker = request.GET.get('ticker', 'BTC-USD')
+    ticker = request.GET.get('ticker', 'BTC-INR')
     model_type = request.GET.get('model', 'linear').lower()
+    horizon = request.GET.get('horizon', '30d').lower()
 
-    cache_key = f'forecast_{ticker}_{model_type}_30d'
+    cache_key = f'forecast_{ticker}_{model_type}_{horizon}'
     if not request.GET.get('refresh'):
         cached = cache.get(cache_key)
         if cached:
             return Response(cached)
 
+    # Determine fetch params based on horizon
+    if horizon == '1h':
+        period, interval, n_forecast = "7d", "15m", 4 # 4 * 15m = 1h
+    elif horizon == '1d':
+        period, interval, n_forecast = "60d", "1h", 24 # 24 * 1h = 1d
+    elif horizon == '3d':
+        period, interval, n_forecast = "60d", "1h", 72 # 72 * 1h = 3d
+    else: # 30d defaults
+        period, interval, n_forecast = "5y", "1d", 30
+
     try:
-        # Fetch 5 years daily data
         t_obj = yf.Ticker(ticker)
-        df = t_obj.history(period="5y", interval="1d")
+        df = t_obj.history(period=period, interval=interval)
         if df.empty or len(df) < 50:
             return Response({'error': f'Not enough data for {ticker}'}, status=400)
 
-        df['DateStr'] = df.index.strftime('%Y-%m-%d')
+        if ticker in ['GC=F', 'SI=F']:
+            try:
+                inr_rate = yf.Ticker('INR=X').fast_info.last_price
+            except:
+                inr_rate = 83.0
+            gram_conv = 31.1034768
+            df['Close'] = (df['Close'] * inr_rate) / gram_conv
+
+        df['DateStr'] = df.index.strftime('%Y-%m-%d %H:%M:%S' if interval != '1d' else '%Y-%m-%d')
         prices = df['Close'].values
         dates = df['DateStr'].values
 
-        # Build feature matrix (Lag1, Lag5, Lag10, 5D Momentum, Volatility)
+        # Build feature matrix (Lag1, Lag5, Lag10, 5-period Momentum, Volatility)
         X, y = [], []
         log_rets_all = []
         for i in range(15, len(prices)-1):
@@ -1618,8 +1651,10 @@ def asset_forecast(request):
 
         X = np.array(X)
         y = np.array(y)
-        scaler = StandardScaler()
-        X_sc = scaler.fit_transform(X)
+        
+        # Scale X
+        scaler_X = StandardScaler()
+        X_sc = scaler_X.fit_transform(X)
         
         # Train model based on user selection
         if model_type == 'logistic':
@@ -1629,20 +1664,47 @@ def asset_forecast(request):
             model.fit(X_sc, y_bin)
             avg_up = np.mean([r for r in log_rets_all if r > 0]) if any(r > 0 for r in log_rets_all) else 0.01
             avg_down = np.mean([r for r in log_rets_all if r < 0]) if any(r < 0 for r in log_rets_all) else -0.01
-            # dummy rmse for CI
             rmse = np.std(prices[-60:]) * 0.1
-        elif model_type == 'lstm':
-            # We use an MLP to proxy a deep neural network since tensorflow is not installed
-            model = MLPRegressor(hidden_layer_sizes=(50, 50), max_iter=500, random_state=42)
-            model.fit(X_sc, y)
-            preds = model.predict(X_sc)
+        elif model_type in ['lstm', 'rnn']:
+            from tensorflow.keras.models import Sequential
+            from tensorflow.keras.layers import LSTM, SimpleRNN, Dense, Dropout
+            from tensorflow.keras.callbacks import EarlyStopping
+            import os
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+            
+            # Scale Y for better LSTM/RNN training
+            scaler_y = StandardScaler()
+            y_sc = scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
+            
+            X_sc_keras = X_sc.reshape((X_sc.shape[0], 1, X_sc.shape[1]))
+            keras_model = Sequential()
+            if model_type == 'lstm':
+                keras_model.add(LSTM(64, activation='relu', input_shape=(1, X_sc.shape[1]), return_sequences=True))
+                keras_model.add(Dropout(0.2))
+                keras_model.add(LSTM(32, activation='relu'))
+            else:
+                keras_model.add(SimpleRNN(64, activation='relu', input_shape=(1, X_sc.shape[1]), return_sequences=True))
+                keras_model.add(Dropout(0.2))
+                keras_model.add(SimpleRNN(32, activation='relu'))
+            keras_model.add(Dense(1))
+            keras_model.compile(optimizer='adam', loss='mse')
+            
+            es = EarlyStopping(monitor='loss', patience=5, restore_best_weights=True)
+            keras_model.fit(X_sc_keras, y_sc, epochs=100, batch_size=32, verbose=0, callbacks=[es])
+            
+            preds_sc = keras_model.predict(X_sc_keras, verbose=0).flatten()
+            preds = scaler_y.inverse_transform(preds_sc.reshape(-1, 1)).flatten()
             rmse = float(np.sqrt(np.mean((y - preds)**2)))
-        elif model_type == 'cnn':
-            # Another MLP variant acting as a feature extractor proxy
-            model = MLPRegressor(hidden_layer_sizes=(100,), activation='relu', max_iter=500, random_state=42)
-            model.fit(X_sc, y)
-            preds = model.predict(X_sc)
-            rmse = float(np.sqrt(np.mean((y - preds)**2)))
+
+            class KerasWrapper:
+                def __init__(self, m, sy):
+                    self.m = m
+                    self.sy = sy
+                def predict(self, X):
+                    pred_sc = self.m.predict(X.reshape((X.shape[0], 1, X.shape[1])), verbose=0).flatten()
+                    return self.sy.inverse_transform(pred_sc.reshape(-1, 1)).flatten()
+            
+            model = KerasWrapper(keras_model, scaler_y)
         else: # linear
             model = LinearRegression()
             model.fit(X_sc, y)
@@ -1659,49 +1721,63 @@ def asset_forecast(request):
             for i in range(max(0, len(dates) - 60), len(dates))
         ]
 
-        forecast = []
-        offset = 0
-        is_crypto = 'BTC' in ticker or 'ETH' in ticker
-        for _ in range(30):
-            offset += 1
-            fdt = last_dt + timedelta(days=offset)
-            if not is_crypto:
-                while fdt.weekday() >= 5:   # skip Sat, Sun for non-crypto
+        future_rows = []
+        window = list(prices[-15:])
+        
+        last_dt = pd.to_datetime(dates[-1])
+        
+        for k in range(n_forecast):
+            if interval == "15m":
+                target_dt = last_dt + pd.Timedelta(minutes=15 * (k+1))
+            elif interval == "1h":
+                target_dt = last_dt + pd.Timedelta(hours=k+1)
+            else: # 1d
+                offset = k + 1
+                target_dt = last_dt + pd.Timedelta(days=offset)
+                while target_dt.weekday() >= 5: # skip weekends for daily
                     offset += 1
-                    fdt = last_dt + timedelta(days=offset)
+                    target_dt = last_dt + pd.Timedelta(days=offset)
+            
+            fdate = target_dt.strftime('%Y-%m-%d %H:%M' if interval != '1d' else '%Y-%m-%d')
             
             p_arr = np.array(window, dtype=float)
+            if len(p_arr) < 10: break
             mom = (p_arr[-1] - p_arr[-5]) / p_arr[-5] * 100 if p_arr[-5] > 0 else 0.0
-            log_rets = [np.log(p_arr[k] / p_arr[k-1]) for k in range(1, len(p_arr)) if p_arr[k-1] > 0]
+            log_rets = [np.log(p_arr[m]/p_arr[m-1]) for m in range(1, len(p_arr)) if p_arr[m-1] > 0]
             vol = float(np.std(log_rets)) if log_rets else 0.0
+            
             feat = np.array([[p_arr[-1], p_arr[-5], p_arr[-10], mom, vol]])
-            feat_sc = scaler.transform(feat)
+            feat_sc = scaler_X.transform(feat)
             
             if model_type == 'logistic':
-                prob_up = model.predict_proba(feat_sc)[0][1]
-                expected_log_ret = prob_up * avg_up + (1 - prob_up) * avg_down
-                pred = float(p_arr[-1] * np.exp(expected_log_ret))
+                base_prob = model.predict_proba(feat_sc)[0][1] if hasattr(model, 'predict_proba') else model.predict(feat_sc)[0]
+                modifier = avg_up if base_prob >= 0.5 else avg_down
+                pred = p_arr[-1] * (1 + modifier)
             else:
                 pred = float(model.predict(feat_sc)[0])
-
-            forecast.append({
-                'date': str(fdt),
+                
+            future_rows.append({
+                'date': fdate,
                 'price': round(pred, 4),
                 'lower': round(pred - 1.96 * rmse, 4),
-                'upper': round(pred + 1.96 * rmse, 4),
+                'upper': round(pred + 1.96 * rmse, 4)
             })
             window.append(pred)
-            window.pop(0)
+            if len(window) > 20: window.pop(0)
 
-        result = {
-            'historical': hist_traj,
-            'forecast': forecast,
-            'rmse': round(rmse, 4),
+        n_hist = min(60, len(prices))
+        hist_rows = [{'date': dates[-n_hist+i], 'price': round(float(prices[-n_hist+i]), 4)} for i in range(n_hist)]
+
+        result_data = {
             'ticker': ticker,
-            'model': model_type
+            'model': model_type,
+            'horizon': horizon,
+            'historical': hist_rows,
+            'forecast': future_rows,
+            'rmse': round(rmse, 4)
         }
-        cache.set(cache_key, result, 60 * 60) # 1 hour cache
-        return Response(result)
+        cache.set(cache_key, result_data, 60 * 60) # 1 hour cache
+        return Response(result_data)
 
     except Exception as e:
         import traceback

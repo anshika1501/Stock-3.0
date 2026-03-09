@@ -168,22 +168,22 @@ function OverviewTab({ data }: { data: GoldSilverAnalysis }) {
                                 <YAxis
                                     yAxisId="gold"
                                     orientation="left"
-                                    tickFormatter={(v) => `$${v.toLocaleString()}`}
+                                    tickFormatter={(v) => `₹${v.toLocaleString()}`}
                                     tick={{ fontSize: 11 }}
                                     width={72}
-                                    label={{ value: "Gold (USD)", angle: -90, position: "insideLeft", offset: -2, fontSize: 11 }}
+                                    label={{ value: "Gold (INR/1g)", angle: -90, position: "insideLeft", offset: -2, fontSize: 11 }}
                                 />
                                 <YAxis
                                     yAxisId="silver"
                                     orientation="right"
-                                    tickFormatter={(v) => `$${v.toFixed(1)}`}
+                                    tickFormatter={(v) => `₹${v.toFixed(1)}`}
                                     tick={{ fontSize: 11 }}
                                     width={60}
-                                    label={{ value: "Silver (USD)", angle: 90, position: "insideRight", offset: 2, fontSize: 11 }}
+                                    label={{ value: "Silver (INR/1g)", angle: 90, position: "insideRight", offset: 2, fontSize: 11 }}
                                 />
                                 <Tooltip
                                     formatter={(val: number, name: string) => [
-                                        `$${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                                        `₹${Number(val).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                                         name === "gold" ? "Gold" : "Silver",
                                     ]}
                                     labelFormatter={(l: string) => new Date(l).toLocaleDateString()}
@@ -320,7 +320,7 @@ function LimeTab({ data }: { data: GoldSilverAnalysis }) {
                 <Card>
                     <CardContent className="pt-4 pb-3">
                         <p className="text-xs text-muted-foreground">LIME Prediction</p>
-                        <p className="text-lg font-bold">${lime.prediction.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-lg font-bold">₹{lime.prediction.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     </CardContent>
                 </Card>
                 <Card>
@@ -402,20 +402,28 @@ function LimeTab({ data }: { data: GoldSilverAnalysis }) {
 // ─── Trajectory tab ───────────────────────────────────────────────
 
 const FORECAST_ASSETS = [
-    { label: "BTC-USD (Bitcoin)", value: "BTC-USD", name: "Bitcoin" },
-    { label: "Gold", value: "GC=F", name: "Gold" },
-    { label: "Silver", value: "SI=F", name: "Silver" },
+    { label: "BTC-INR (Bitcoin)", value: "BTC-INR", name: "Bitcoin" },
+    { label: "Gold (per 1g)", value: "GC=F", name: "Gold (per 1g)" },
+    { label: "Silver (per 1g)", value: "SI=F", name: "Silver (per 1g)" },
 ];
 
 const FORECAST_MODELS = [
     { label: "Logistic Regression", value: "logistic", desc: "Directional prediction (up/down) scaling average returns." },
-    { label: "LSTM (Proxy)", value: "lstm", desc: "Multi-Layer Perceptron acting as deep learning time series proxy." },
-    { label: "CNN (Proxy)", value: "cnn", desc: "MLP acting as feature extractor proxy for CNN." },
+    { label: "LSTM", value: "lstm", desc: "Long Short-Term Memory deep learning model for time series forecasting." },
+    { label: "RNN", value: "rnn", desc: "Simple Recurrent Neural Network for sequential data." },
+];
+
+const FORECAST_HORIZONS = [
+    { label: "Next 1 Hour (15m intervals)", value: "1h" },
+    { label: "Next 1 Day (1h intervals)", value: "1d" },
+    { label: "Next 3 Days (1h intervals)", value: "3d" },
+    { label: "Next 30 Days (1d intervals)", value: "30d" },
 ];
 
 function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
     const [asset, setAsset] = useState(FORECAST_ASSETS[0].value);
     const [model, setModel] = useState(FORECAST_MODELS[0].value);
+    const [horizon, setHorizon] = useState(FORECAST_HORIZONS[3].value);
     const [trajData, setTrajData] = useState<AssetForecast | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -424,7 +432,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
         let active = true;
         setLoading(true);
         setError(null);
-        fetchAssetForecast(asset, model).then(res => {
+        fetchAssetForecast(asset, model, horizon).then(res => {
             if (!active) return;
             if (res.error) {
                 setError(res.error);
@@ -437,7 +445,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
             if (active) setLoading(false);
         });
         return () => { active = false; };
-    }, [asset, model]);
+    }, [asset, model, horizon]);
 
     if (loading) {
         return (
@@ -482,16 +490,23 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
     const forecastPoints = (trajData.forecast ?? []).map((p, i) => ({
         date: p.date,
         historical: i === 0 ? lastHistPrice : null,
-        forecast: p.price,
-        lower: p.lower,
-        upper: p.upper,
+        forecast: Math.max(0, p.price),
+        lower: Math.max(0, p.lower),
+        upper: Math.max(0, p.upper),
     }));
 
     const combined = [...histPoints, ...forecastPoints];
     const assetName = FORECAST_ASSETS.find(a => a.value === asset)?.name ?? "Asset";
     const selectedModelInfo = FORECAST_MODELS.find(m => m.value === model) ?? FORECAST_MODELS[0];
+    const selectedHorizonInfo = FORECAST_HORIZONS.find(h => h.value === horizon) ?? FORECAST_HORIZONS[3];
 
-    const tickFmt = (v: string) => new Date(v).toLocaleDateString([], { month: "short", day: "numeric" });
+    const tickFmt = (v: string) => {
+        const d = new Date(v);
+        if (horizon === '1h' || horizon === '1d' || horizon === '3d') {
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    };
 
     return (
         <div className="space-y-6">
@@ -518,6 +533,19 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
                     >
                         {FORECAST_MODELS.map((m) => (
                             <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                    </select>
+                </div>
+                <div className="hidden sm:block w-px h-10 bg-border"></div>
+                <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Horizon</span>
+                    <select
+                        value={horizon}
+                        onChange={(e) => setHorizon(e.target.value)}
+                        className="border border-border rounded-md px-3 py-1.5 text-sm bg-background font-medium focus:ring-2 focus:ring-primary focus:outline-none"
+                    >
+                        {FORECAST_HORIZONS.map((h) => (
+                            <option key={h.value} value={h.value}>{h.label}</option>
                         ))}
                     </select>
                 </div>
@@ -548,7 +576,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
             {trajData.forecast && trajData.forecast.length > 0 && (
                 <Card>
                     <CardContent className="pt-4 pb-3">
-                        <p className="text-xs text-muted-foreground mb-1">30-Day Forecast Range</p>
+                        <p className="text-xs text-muted-foreground mb-1">Forecast Range ({selectedHorizonInfo.label})</p>
                         <div className="flex items-center gap-4">
                             <div>
                                 <span className="text-xs text-muted-foreground">Lower bound: </span>
@@ -569,7 +597,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
 
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-base">{assetName} Predictive Trajectory — Last 60 Days + 30-Day Forecast</CardTitle>
+                    <CardTitle className="text-base">{assetName} Predictive Trajectory — {selectedHorizonInfo.label}</CardTitle>
                     <p className="text-xs text-muted-foreground mt-1 text-primary/80 font-medium">
                         Model: {selectedModelInfo.label}
                     </p>
@@ -586,7 +614,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
                                 tickFormatter={(v) => `₹${Number(v).toLocaleString()}`}
                                 tick={{ fontSize: 11 }}
                                 width={82}
-                                domain={['auto', 'auto']}
+                                domain={[0, 'auto']}
                             />
                             <Tooltip
                                 formatter={(val: number, name: string) => {
@@ -599,7 +627,13 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
                                     };
                                     return [`₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, labels[name] ?? name];
                                 }}
-                                labelFormatter={(l: string) => new Date(l).toLocaleDateString()}
+                                labelFormatter={(l: string) => {
+                                    const d = new Date(l);
+                                    if (horizon === '1h' || horizon === '1d' || horizon === '3d') {
+                                        return d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+                                    }
+                                    return d.toLocaleDateString();
+                                }}
                             />
                             <Legend />
 
@@ -629,7 +663,7 @@ function TrajectoryTab({ data }: { data: GoldSilverAnalysis }) {
                             <Line
                                 type="monotone"
                                 dataKey="historical"
-                                stroke={asset === "BTC-USD" ? "#F7931A" : asset === "GC=F" ? GOLD_COLOR : SILVER_COLOR}
+                                stroke={asset === "BTC-INR" ? "#F7931A" : asset === "GC=F" ? GOLD_COLOR : SILVER_COLOR}
                                 strokeWidth={2}
                                 dot={false}
                                 name="historical"
@@ -720,7 +754,7 @@ export default function GoldSilverClient() {
             {/* Price cards */}
             <div className="flex gap-4 flex-col sm:flex-row">
                 <PriceCard
-                    label="Gold (GC=F)"
+                    label="Gold (GC=F) / 1g"
                     current={data.prices.gold.current}
                     change={data.prices.gold.change}
                     changePct={data.prices.gold.change_percent}
@@ -728,7 +762,7 @@ export default function GoldSilverClient() {
                     color={GOLD_COLOR}
                 />
                 <PriceCard
-                    label="Silver (SI=F)"
+                    label="Silver (SI=F) / 1g"
                     current={data.prices.silver.current}
                     change={data.prices.silver.change}
                     changePct={data.prices.silver.change_percent}

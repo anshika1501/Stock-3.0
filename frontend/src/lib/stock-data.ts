@@ -446,8 +446,8 @@ export interface AssetForecast {
   error?: string;
 }
 
-export async function fetchAssetForecast(ticker: string, model: string = 'linear'): Promise<AssetForecast> {
-  return apiFetch<AssetForecast>(`/forecast/?ticker=${ticker}&model=${model}`);
+export async function fetchAssetForecast(ticker: string, model: string, horizon: string = '30d'): Promise<AssetForecast> {
+  return apiFetch<AssetForecast>(`/forecast/?ticker=${encodeURIComponent(ticker)}&model=${encodeURIComponent(model)}&horizon=${encodeURIComponent(horizon)}`);
 }
 
 // ─── Nifty 50 PCA + K-Means Types ─────────────────────────────
