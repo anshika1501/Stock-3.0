@@ -11,6 +11,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Ensure public directory exists
+RUN mkdir -p /app/public
+
 # Build argument for API URL (needed at build time for NEXT_PUBLIC_ vars)
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
