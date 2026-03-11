@@ -86,3 +86,33 @@ class StockPrice(models.Model):
     
     def __str__(self):
         return f"{self.stock.symbol} - {self.date}"
+
+
+class StockPrediction(models.Model):
+    """Model for storing ML predictions for stocks over a 72-hour window."""
+    symbol = models.CharField(max_length=20)
+    target_time = models.DateTimeField()
+    
+    # 30-day context
+    current_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    min_price_30d = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    max_price_30d = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    
+    # Predictions
+    arima_prediction = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    lstm_prediction = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    cnn_prediction = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Evaluation (populated later)
+    actual_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    arima_error = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    lstm_error = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    cnn_error = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        
+    def __str__(self):
+        return f"Prediction for {self.symbol} at {self.target_time}"

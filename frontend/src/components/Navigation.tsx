@@ -138,6 +138,7 @@ export default function Navigation() {
           <Link href="/nifty50-pca" className="text-sm font-medium hover:text-primary transition-colors">Stock Analysis</Link>
           <Link href="/compare" className="text-sm font-medium hover:text-primary transition-colors">Compare</Link>
           <Link href="/gold-silver" className="text-sm font-medium hover:text-primary transition-colors">Bitcoin, Gold &amp; Silver</Link>
+          <Link href="/stock-prediction" className="text-sm font-medium hover:text-primary transition-colors">Stock prediction</Link>
           <div className="h-4 w-px bg-border mx-2 hidden sm:block"></div>
 
           {user ? (

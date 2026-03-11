@@ -20,6 +20,8 @@ urlpatterns = [
 
     # Generic asset forecast (BTC, Gold, Silver)
     path('forecast/', views.asset_forecast, name='asset-forecast'),
+    path('predictions/', views.stock_predictions, name='stock-predictions'),
+    path('predictions/evaluate/', views.evaluate_predictions, name='evaluate-predictions'),
 
     # Nifty 50 PCA + K-Means clustering
     path('nifty50-pca/', views.nifty50_pca_clustering, name='nifty50-pca'),

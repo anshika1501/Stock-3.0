@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import StockCategory, Stock, StockPrice
+from .models import StockCategory, Stock, StockPrice, StockPrediction
 
 
 class StockCategorySerializer(serializers.ModelSerializer):
@@ -69,3 +69,14 @@ class StockDetailSerializer(serializers.ModelSerializer):
         # Get last 30 days of price data
         prices = obj.prices.all()[:30]
         return StockPriceSerializer(prices, many=True).data
+
+class StockPredictionSerializer(serializers.ModelSerializer):
+    """Serializer for stock predictions."""
+    class Meta:
+        model = StockPrediction
+        fields = [
+            'id', 'symbol', 'target_time', 'current_price', 
+            'min_price_30d', 'max_price_30d', 'arima_prediction', 
+            'lstm_prediction', 'cnn_prediction', 'actual_price', 
+            'arima_error', 'lstm_error', 'cnn_error', 'created_at'
+        ]

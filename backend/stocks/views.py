@@ -1855,3 +1855,196 @@ def login_user(request):
         }, status=200)
     else:
         return Response({'error': 'Invalid password.'}, status=401)
+
+
+from django.utils import timezone
+from .models import StockPrediction
+from .serializers import StockPredictionSerializer
+import yfinance as yf
+
+@api_view(['GET', 'POST'])
+def stock_predictions(request):
+    """
+    GET: List all predictions
+    POST: Create a new prediction
+    """
+    if request.method == 'GET':
+        predictions = StockPrediction.objects.all()
+        serializer = StockPredictionSerializer(predictions, many=True)
+        return Response(serializer.data)
+        
+    elif request.method == 'POST':
+        symbol = request.data.get('symbol')
+        target_time = request.data.get('target_time')
+        
+        if not symbol or not target_time:
+            return Response({'error': 'symbol and target_time are required'}, status=400)
+            
+        try:
+            target_dt = pd.to_datetime(target_time)
+            if timezone.is_naive(target_dt):
+                target_dt = timezone.make_aware(target_dt)
+        except Exception:
+            return Response({'error': 'Invalid target_time format'}, status=400)
+            
+        # Fetch 30-day historical data
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1mo", interval="1h")
+            if hist.empty:
+                hist = ticker.history(period="1mo", interval="1d")
+                
+            if hist.empty:
+                return Response({'error': f'No historical data found for {symbol}'}, status=400)
+                
+            # Current, min, max
+            current_price = float(hist['Close'].iloc[-1])
+            min_price = float(hist['Low'].min())
+            max_price = float(hist['High'].max())
+            
+            # Check if we need to convert to INR (if symbol is not Indian exch, usually doesn't have .NS or .BO)
+            exchange_rate = 1.0
+            if not symbol.endswith('.NS') and not symbol.endswith('.BO'):
+                try:
+                    inr_ticker = yf.Ticker("USDINR=X")
+                    inr_hist = inr_ticker.history(period="1d")
+                    if not inr_hist.empty:
+                        exchange_rate = float(inr_hist['Close'].iloc[-1])
+                except Exception as e:
+                    logger.warning(f"Could not fetch USDINR exchange rate: {e}")
+                    
+            if exchange_rate != 1.0:
+                current_price *= exchange_rate
+                min_price *= exchange_rate
+                max_price *= exchange_rate
+                hist['Close'] = hist['Close'] * exchange_rate
+                
+            # Machine Learning predictions
+            prices = hist['Close'].values
+            
+            # ARIMA
+            from statsmodels.tsa.arima.model import ARIMA
+            try:
+                arima_model = ARIMA(prices, order=(5,1,0))
+                arima_fit = arima_model.fit()
+                steps = 24  # default to a rough 24 steps ahead
+                try:
+                    target_hours = int((target_dt - timezone.now()).total_seconds() / 3600)
+                    steps = max(1, target_hours)
+                except:
+                    pass
+                arima_pred = float(arima_fit.forecast(steps=steps)[-1])
+            except Exception as e:
+                logger.error(f"ARIMA error: {e}")
+                arima_pred = current_price
+                
+            # LSTM (Simple TF model)
+            import tensorflow as tf
+            from sklearn.preprocessing import MinMaxScaler
+            try:
+                scaler = MinMaxScaler()
+                scaled_prices = scaler.fit_transform(prices.reshape(-1, 1))
+                X, y = [], []
+                seq_len = min(10, len(scaled_prices) - 1)
+                for i in range(len(scaled_prices) - seq_len):
+                    X.append(scaled_prices[i:i+seq_len])
+                    y.append(scaled_prices[i+seq_len])
+                X, y = np.array(X), np.array(y)
+                
+                # Build simple LSTM
+                lstm_model = tf.keras.Sequential([
+                    tf.keras.layers.LSTM(16, activation='relu', input_shape=(seq_len, 1)),
+                    tf.keras.layers.Dense(1)
+                ])
+                lstm_model.compile(optimizer='adam', loss='mse')
+                if len(X) > 0:
+                    lstm_model.fit(X, y, epochs=5, verbose=0)
+                    last_seq = scaled_prices[-seq_len:].reshape(1, seq_len, 1)
+                    lstm_pred_scaled = lstm_model.predict(last_seq, verbose=0)
+                    lstm_pred = float(scaler.inverse_transform(lstm_pred_scaled)[0][0])
+                else:
+                    lstm_pred = current_price
+            except Exception as e:
+                logger.error(f"LSTM error: {e}")
+                lstm_pred = current_price
+                
+            # CNN (Simple TF model)
+            try:
+                cnn_model = tf.keras.Sequential([
+                    tf.keras.layers.Conv1D(filters=16, kernel_size=2, activation='relu', input_shape=(seq_len, 1)),
+                    tf.keras.layers.MaxPooling1D(pool_size=2),
+                    tf.keras.layers.Flatten(),
+                    tf.keras.layers.Dense(1)
+                ])
+                cnn_model.compile(optimizer='adam', loss='mse')
+                if len(X) > 0:
+                    cnn_model.fit(X, y, epochs=5, verbose=0)
+                    last_seq = scaled_prices[-seq_len:].reshape(1, seq_len, 1)
+                    cnn_pred_scaled = cnn_model.predict(last_seq, verbose=0)
+                    cnn_pred = float(scaler.inverse_transform(cnn_pred_scaled)[0][0])
+                else:
+                    cnn_pred = current_price
+            except Exception as e:
+                logger.error(f"CNN error: {e}")
+                cnn_pred = current_price
+                
+            prediction = StockPrediction.objects.create(
+                symbol=symbol.upper(),
+                target_time=target_dt,
+                current_price=current_price,
+                min_price_30d=min_price,
+                max_price_30d=max_price,
+                arima_prediction=arima_pred,
+                lstm_prediction=lstm_pred,
+                cnn_prediction=cnn_pred
+            )
+            
+            serializer = StockPredictionSerializer(prediction)
+            return Response(serializer.data, status=201)
+            
+        except Exception as e:
+            logger.error(f"Prediction error: {e}")
+            return Response({'error': str(e)}, status=500)
+
+
+@api_view(['POST'])
+def evaluate_predictions(request):
+    """
+    POST: Evaluate predictions that have passed their target time.
+    """
+    now = timezone.now()
+    pending = StockPrediction.objects.filter(actual_price__isnull=True, target_time__lte=now)
+    
+    evaluated = 0
+    for pred in pending:
+        try:
+            ticker = yf.Ticker(pred.symbol)
+            hist = ticker.history(period="5d", interval="1h")
+            if not hist.empty:
+                actual = float(hist['Close'].iloc[-1])
+                
+                # Apply exchange rate if necessary
+                exchange_rate = 1.0
+                if not pred.symbol.endswith('.NS') and not pred.symbol.endswith('.BO'):
+                    try:
+                        inr_ticker = yf.Ticker("USDINR=X")
+                        inr_hist = inr_ticker.history(period="1d")
+                        if not inr_hist.empty:
+                            exchange_rate = float(inr_hist['Close'].iloc[-1])
+                    except:
+                        pass
+                actual *= exchange_rate
+                
+                pred.actual_price = actual
+                if pred.arima_prediction is not None:
+                    pred.arima_error = float(actual) - float(pred.arima_prediction)
+                if pred.lstm_prediction is not None:
+                    pred.lstm_error = float(actual) - float(pred.lstm_prediction)
+                if pred.cnn_prediction is not None:
+                    pred.cnn_error = float(actual) - float(pred.cnn_prediction)
+                pred.save()
+                evaluated += 1
+        except Exception as e:
+            logger.error(f"Error evaluating {pred.symbol}: {e}")
+            
+    return Response({'message': f'Evaluated {evaluated} predictions.'})
