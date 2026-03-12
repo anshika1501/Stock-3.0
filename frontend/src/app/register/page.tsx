@@ -4,8 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Compass, Mail, Lock, User, ArrowRight, Home, Loader2 } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+import { API_BASE } from "@/lib/api-base";
 
 export default function RegisterPage() {
     const router = useRouter();

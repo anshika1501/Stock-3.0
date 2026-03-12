@@ -5,8 +5,7 @@ import StockChart from "@/components/StockChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+import { API_BASE } from "@/lib/api-base";
 
 const RANGES = [
     { label: '1D', period: '1d' },

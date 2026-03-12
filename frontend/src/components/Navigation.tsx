@@ -7,8 +7,7 @@ import { useRouter } from "next/navigation";
 import { Compass, Search, Loader2, User as UserIcon, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { SearchResult } from "@/lib/stock-data";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+import { API_BASE } from "@/lib/api-base";
 
 export default function Navigation() {
   const router = useRouter();

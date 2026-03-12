@@ -4,8 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Compass, Mail, Lock, ArrowRight, Home, Loader2, CheckCircle2 } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+import { API_BASE } from "@/lib/api-base";
 
 export function LoginClient() {
     const router = useRouter();

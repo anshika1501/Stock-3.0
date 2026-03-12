@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Loader2, RefreshCw, Send, AlertCircle, CheckCircle2 } from "lucide-react";
+import { API_BASE } from "@/lib/api-base";
 
 interface Prediction {
     id: number;
@@ -19,8 +20,6 @@ interface Prediction {
     cnn_error: string | null;
     created_at: string;
 }
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
 
 export default function StockPredictionClient() {
     const [predictions, setPredictions] = useState<Prediction[]>([]);
