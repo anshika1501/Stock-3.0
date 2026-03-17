@@ -1,36 +1,55 @@
-script: |
-  echo "Loading Node (NVM)..."
-  export NVM_DIR="$HOME/.nvm"
-  source $NVM_DIR/nvm.sh
+name: Deploy Stock Project
 
-  cd /home/anshu/dockers/Stock-3.0
+on:
+  push:
+    branches:
+      - main
 
-  echo "Pulling latest code..."
-  git pull origin main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-  echo "Updating backend..."
-  cd backend
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
 
-  # Create venv if missing
-  if [ ! -d "venv" ]; then
-    python3 -m venv venv
-  fi
+          script: |
+            echo "Loading Node..."
+            export NVM_DIR="$HOME/.nvm"
+            source $NVM_DIR/nvm.sh
 
-  ./venv/bin/pip install -r requirements.txt
-  ./venv/bin/python manage.py migrate
+            echo "Go to project"
+            cd /home/anshu/dockers/Stock-3.0 || exit 1
 
-  cd ..
+            echo "Pull latest code"
+            git pull origin main
 
-  echo "Updating frontend..."
-  cd frontend
+            echo "Backend update"
+            cd backend
 
-  npm install
-  npm run build
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
 
-  cd ..
+            ./venv/bin/pip install -r requirements.txt
+            ./venv/bin/python manage.py migrate
 
-  echo "Restarting PM2 services..."
-  pm2 restart stock-backend || echo "stock-backend not found"
-  pm2 restart stock-frontend || echo "stock-frontend not found"
+            cd ..
 
-  echo "Deployment completed!"
+            echo "Frontend update"
+            cd frontend
+
+            npm install
+            npm run build
+
+            cd ..
+
+            echo "Restart PM2"
+            pm2 restart stock-backend || echo "backend not found"
+            pm2 restart stock-frontend || echo "frontend not found"
+
+            echo "Done"
