@@ -1,0 +1,36 @@
+script: |
+  echo "Loading Node (NVM)..."
+  export NVM_DIR="$HOME/.nvm"
+  source $NVM_DIR/nvm.sh
+
+  cd /home/anshu/dockers/Stock-3.0
+
+  echo "Pulling latest code..."
+  git pull origin main
+
+  echo "Updating backend..."
+  cd backend
+
+  # Create venv if missing
+  if [ ! -d "venv" ]; then
+    python3 -m venv venv
+  fi
+
+  ./venv/bin/pip install -r requirements.txt
+  ./venv/bin/python manage.py migrate
+
+  cd ..
+
+  echo "Updating frontend..."
+  cd frontend
+
+  npm install
+  npm run build
+
+  cd ..
+
+  echo "Restarting PM2 services..."
+  pm2 restart stock-backend || echo "stock-backend not found"
+  pm2 restart stock-frontend || echo "stock-frontend not found"
+
+  echo "Deployment completed!"
