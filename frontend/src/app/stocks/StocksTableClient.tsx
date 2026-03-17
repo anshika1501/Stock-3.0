@@ -181,7 +181,7 @@ function PCAPanel() {
                         </CardHeader>
                         <CardContent>
                             <ResponsiveContainer width="100%" height={580}>
-                                <ScatterChart margin={{ top: 24, right: 24, bottom: 36, left: 16 }}>
+                                <ScatterChart margin={{ top: 24, right: 24, bottom: 80, left: 16 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                     <XAxis
                                         type="number"
@@ -192,7 +192,7 @@ function PCAPanel() {
                                         label={{
                                             value: `Principal Component 1 (PC1) — ${(data.explained_variance[0] * 100).toFixed(1)}% variance`,
                                             position: 'insideBottom',
-                                            offset: -20,
+                                            offset: -30,
                                             fontSize: 12,
                                             fill: '#6366F1',
                                         }}
@@ -215,7 +215,11 @@ function PCAPanel() {
                                     <ReferenceLine x={0} stroke="#cbd5e1" strokeDasharray="4 2" />
                                     <ReferenceLine y={0} stroke="#cbd5e1" strokeDasharray="4 2" />
                                     <Tooltip content={<CustomTooltip />} />
-                                    <Legend />
+                                    <Legend 
+                                        verticalAlign="bottom" 
+                                        wrapperStyle={{ paddingTop: '20px' }}
+                                        formatter={(value) => <span className="mr-4 text-xs font-medium text-slate-700">{value}</span>}
+                                    />
                                     {byCluster.map((pts, ci) => (
                                         <Scatter
                                             key={ci}
