@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowRight } from "lucide-react";
+import { Search, Loader2, TrendingUp, TrendingDown, Minus, ArrowRight, ListFilter, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Navigation from "@/components/Navigation";
+import { useCompareStocks } from "@/hooks/use-compare-stocks";
+import { cn } from "@/lib/utils";
 
 export default function SentimentAnalysisPage() {
   const [ticker, setTicker] = useState("");
@@ -14,11 +16,21 @@ export default function SentimentAnalysisPage() {
   const [summary, setSummary] = useState<any>(null);
   const [analyzedTicker, setAnalyzedTicker] = useState("");
   const [history, setHistory] = useState<any[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ticker.trim()) return;
+  const { compareList } = useCompareStocks();
+  const portfolioList = compareList.length > 0 ? compareList : [
+    { symbol: 'AAPL', name: 'Apple' },
+    { symbol: 'TSLA', name: 'Tesla' },
+    { symbol: 'MSFT', name: 'Microsoft' },
+    { symbol: 'RELIANCE', name: 'Reliance' },
+    { symbol: 'TCS', name: 'TCS' }
+  ];
 
+  const runAnalysis = async (targetTicker: string) => {
+    if (!targetTicker.trim()) return;
+
+    setTicker(targetTicker);
     setLoading(true);
     setError(null);
     setSummary(null);
@@ -35,25 +47,25 @@ export default function SentimentAnalysisPage() {
       const analyzeRes = await fetch(`${sentimentApiUrl}/api/analyze-stock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stock_name: ticker.toUpperCase() }),
+        body: JSON.stringify({ stock_name: targetTicker.toUpperCase() }),
       });
 
       if (!analyzeRes.ok) {
         let errorMsg = "Error analyzing stock. Server returned: " + analyzeRes.status;
         try {
-            const errData = await analyzeRes.json();
-            errorMsg = errData.error || errData.message || errorMsg;
+          const errData = await analyzeRes.json();
+          errorMsg = errData.error || errData.message || errorMsg;
         } catch (e) {
-            // It might be HTML if backend returns a debug page or 404 proxy
+          // It might be HTML if backend returns a debug page or 404 proxy
         }
         throw new Error(errorMsg);
       }
 
       const analyzeData = await analyzeRes.json();
       setSummary(analyzeData.summary);
-      setAnalyzedTicker(ticker.toUpperCase());
+      setAnalyzedTicker(targetTicker.toUpperCase());
 
-      const historyRes = await fetch(`${sentimentApiUrl}/api/get-analysis/${ticker.toUpperCase()}`);
+      const historyRes = await fetch(`${sentimentApiUrl}/api/get-analysis/${targetTicker.toUpperCase()}`);
       if (historyRes.ok) {
         const historyData = await historyRes.json();
         setHistory(historyData.history || []);
@@ -63,6 +75,11 @@ export default function SentimentAnalysisPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAnalyze = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await runAnalysis(ticker);
   };
 
   const renderTrendIcon = (trend: string) => {
@@ -80,10 +97,60 @@ export default function SentimentAnalysisPage() {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
+
       <main className="container mx-auto px-4 py-12 relative z-10">
-        <div className="max-w-4xl mx-auto space-y-10">
-          <div className="text-center space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-6xl mx-auto">
+          
+          {/* Left Sidebar Menu */}
+          <div className="md:col-span-1 space-y-4">
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="flex items-center justify-between w-full hover:bg-secondary/50 p-2 -ml-2 rounded-lg transition-colors group cursor-pointer"
+            >
+              <h2 className="flex items-center gap-2 text-lg font-bold font-headline">
+                <ListFilter className="h-5 w-5 text-primary" />
+                Portfolio
+              </h2>
+              {isSidebarOpen ? (
+                <ChevronUp className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              )}
+            </button>
+            
+            <div className={cn("flex-col gap-2 transition-all", isSidebarOpen ? "flex" : "hidden")}>
+              {portfolioList.map(stock => (
+                <button
+                  key={stock.symbol}
+                  onClick={() => runAnalysis(stock.symbol)}
+                  disabled={loading}
+                  className={cn(
+                    "flex flex-col items-start px-4 py-3 rounded-xl border transition-all text-left w-full",
+                    ticker.toUpperCase() === stock.symbol 
+                      ? "bg-primary/10 border-primary shadow-sm"
+                      : "bg-card border-border/50 hover:bg-secondary/50 hover:border-primary/30"
+                  )}
+                >
+                  <span className={cn(
+                    "font-bold text-sm",
+                    ticker.toUpperCase() === stock.symbol ? "text-primary" : "text-foreground"
+                  )}>
+                    {stock.name.length > 20 ? stock.name.substring(0, 20) + '...' : stock.name}
+                  </span>
+                  <span className={cn(
+                    "text-xs font-semibold",
+                    ticker.toUpperCase() === stock.symbol ? "text-primary/80" : "text-muted-foreground"
+                  )}>
+                    {stock.symbol}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <div className="md:col-span-3 space-y-10">
+            <div className="text-center space-y-4">
             <h1 className="text-5xl font-headline font-black tracking-tight text-primary">
               AI Market Sentiment
             </h1>
@@ -108,9 +175,9 @@ export default function SentimentAnalysisPage() {
                     className="pl-14 h-16 text-xl border-2 rounded-xl transition-all shadow-sm focus-visible:ring-primary focus-visible:border-primary bg-secondary/20"
                   />
                 </div>
-                <Button 
-                  type="submit" 
-                  disabled={loading} 
+                <Button
+                  type="submit"
+                  disabled={loading}
                   className="h-16 px-8 text-lg font-bold rounded-xl shadow-md transition-all sm:w-auto w-full group relative overflow-hidden"
                 >
                   <span className="relative z-10 flex items-center">
@@ -118,7 +185,7 @@ export default function SentimentAnalysisPage() {
                       <Loader2 className="h-6 w-6 animate-spin mr-2" />
                     ) : (
                       <>
-                        Analyze 
+                        Analyze
                         <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                       </>
                     )}
@@ -162,14 +229,14 @@ export default function SentimentAnalysisPage() {
                         </h3>
                       </div>
                     </div>
-                    
+
                     <div className="hidden md:block w-px h-32 bg-border/60"></div>
-                    
+
                     <div className="text-center space-y-2">
                       <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Average Score</p>
                       <div className="flex flex-col items-center gap-3">
                         <div className="p-4 rounded-full bg-secondary/50 shadow-sm text-primary">
-                           <span className="text-3xl">🎯</span>
+                          <span className="text-3xl">🎯</span>
                         </div>
                         <h3 className="text-4xl font-black tracking-tight text-foreground">
                           {summary.avg_sentiment?.toFixed(2) || "N/A"}
@@ -191,8 +258,8 @@ export default function SentimentAnalysisPage() {
                   <CardContent>
                     <div className="grid gap-3">
                       {history.map((item, index) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="flex items-center justify-between p-5 rounded-xl bg-card border border-border/40 hover:border-primary/30 transition-colors shadow-sm"
                         >
                           <div className="flex items-center gap-4">
@@ -218,6 +285,7 @@ export default function SentimentAnalysisPage() {
               )}
             </div>
           )}
+        </div>
         </div>
       </main>
     </div>
