@@ -4,7 +4,13 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Compass, Search, Loader2, User as UserIcon, LogOut } from "lucide-react";
+import { Compass, Search, Loader2, User as UserIcon, LogOut, ChevronDown, Sparkles } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { SearchResult } from "@/lib/stock-data";
 import { API_BASE } from "@/lib/api-base";
@@ -133,11 +139,42 @@ export default function Navigation() {
 
         <nav className="flex items-center gap-6">
           <Link href="/portfolios" className="text-sm font-medium hover:text-primary transition-colors">Portfolios</Link>
-          <Link href="/stocks" className="text-sm font-medium hover:text-primary transition-colors">Nifty 50</Link>
-          <Link href="/nifty50-pca" className="text-sm font-medium hover:text-primary transition-colors">Stock Analysis</Link>
-          <Link href="/compare" className="text-sm font-medium hover:text-primary transition-colors">Compare</Link>
-          <Link href="/gold-silver" className="text-sm font-medium hover:text-primary transition-colors">Bitcoin, Gold &amp; Silver</Link>
-          <Link href="/stock-prediction" className="text-sm font-medium hover:text-primary transition-colors">Stock prediction</Link>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
+              Markets <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuItem asChild>
+                <Link href="/stocks" className="w-full cursor-pointer">Nifty 50</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/gold-silver" className="w-full cursor-pointer">Bitcoin, Gold &amp; Silver</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/compare" className="w-full cursor-pointer">Compare Assets</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1.5 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Tools <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              <DropdownMenuItem asChild>
+                <Link href="/nifty50-pca" className="w-full cursor-pointer">Stock Analysis (PCA)</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/sentiment" className="w-full cursor-pointer">Sentiment Analysis</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/stock-prediction" className="w-full cursor-pointer">Stock Prediction</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <div className="h-4 w-px bg-border mx-2 hidden sm:block"></div>
 
           {user ? (
