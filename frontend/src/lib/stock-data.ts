@@ -34,6 +34,18 @@ export interface Sector {
   stockCount?: number;
 }
 
+export interface ChatSource {
+  symbol: string;
+  name: string;
+  sector: string;
+  distance: number;
+}
+
+export interface ChatResponse {
+  answer: string;
+  sources: ChatSource[];
+}
+
 export interface SearchResult {
   ticker: string;
   name: string;
@@ -448,6 +460,20 @@ export interface AssetForecast {
 
 export async function fetchAssetForecast(ticker: string, model: string, horizon: string = '30d'): Promise<AssetForecast> {
   return apiFetch<AssetForecast>(`/forecast/?ticker=${encodeURIComponent(ticker)}&model=${encodeURIComponent(model)}&horizon=${encodeURIComponent(horizon)}`);
+}
+
+export async function chatWithStocks(query: string): Promise<ChatResponse> {
+  const res = await fetch(`${API_BASE}/chatbot/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.error || `API error ${res.status}`);
+  }
+  return res.json();
 }
 
 // ─── Nifty 50 PCA + K-Means Types ─────────────────────────────

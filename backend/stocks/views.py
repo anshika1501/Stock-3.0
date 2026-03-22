@@ -5,6 +5,7 @@ from django.db.models import Q
 from django.core.cache import cache
 from .models import StockCategory, Stock
 from .services import StockDataService
+from .chatbot import ChatAdvisorService
 from .analytics import (
     search_live_stocks,
     fetch_live_stock_detail,
@@ -2048,3 +2049,21 @@ def evaluate_predictions(request):
             logger.error(f"Error evaluating {pred.symbol}: {e}")
             
     return Response({'message': f'Evaluated {evaluated} predictions.'})
+
+
+@api_view(['POST'])
+def chat_with_stocks(request):
+    """
+    POST /api/chatbot/
+    Body: { "query": "Should I buy TCS or Infosys?" }
+    """
+    question = request.data.get('query') if isinstance(request.data, dict) else None
+    if not question or not str(question).strip():
+        return Response({'error': 'query is required'}, status=400)
+
+    try:
+        result = ChatAdvisorService().answer(str(question))
+        return Response(result)
+    except Exception as exc:
+        logger.error("Chatbot error: %s", exc)
+        return Response({'error': str(exc)}, status=500)

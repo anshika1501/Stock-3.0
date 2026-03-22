@@ -188,6 +188,9 @@ export default function Navigation() {
                   <DropdownMenuItem asChild>
                     <Link href="/stock-prediction" className="w-full cursor-pointer">Stock Prediction</Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/chatbot" className="w-full cursor-pointer">Chatbot (Gemini)</Link>
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 

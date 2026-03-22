@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from pgvector.django import VectorField, HnswIndex
 
 
 class StockCategory(models.Model):
@@ -116,3 +117,28 @@ class StockPrediction(models.Model):
         
     def __str__(self):
         return f"Prediction for {self.symbol} at {self.target_time}"
+
+
+class StockEmbedding(models.Model):
+    """Vector representation of a stock for semantic search / chatbot."""
+    stock = models.OneToOneField(
+        Stock,
+        on_delete=models.CASCADE,
+        related_name='vector',
+    )
+    context = models.TextField(help_text="Concise description and metrics used for embeddings")
+    embedding = VectorField(dimensions=768, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        indexes = [
+            HnswIndex(
+                fields=['embedding'],
+                name='idx_stock_embedding_hnsw',
+                opclasses=['vector_cosine_ops'],
+            ),
+        ]
+
+    def __str__(self):
+        return f"Embedding for {self.stock.symbol}"

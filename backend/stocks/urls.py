@@ -42,6 +42,9 @@ urlpatterns = [
     path('stocks/<str:ticker>/', views.stock_detail, name='stock-detail'),
     path('stocks/<str:ticker>/chart/', views.stock_chart, name='stock-chart'),
 
+    # Chatbot (RAG + Gemini)
+    path('chatbot/', views.chat_with_stocks, name='chatbot'),
+
     # Search
     path('search/', views.stock_search, name='stock-search'),
 
