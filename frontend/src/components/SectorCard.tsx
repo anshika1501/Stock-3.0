@@ -20,13 +20,14 @@ const iconMap: Record<string, any> = {
 
 export default function SectorCard({ sector }: { sector: Sector }) {
   const Icon = iconMap[sector.icon] || Landmark;
+  const imageSrc = sector.image && sector.image.trim().length > 0 ? sector.image : "/sector-placeholder.svg";
 
   return (
     <Link href={`/portfolio/${sector.id}`}>
       <Card className="group overflow-hidden hover:shadow-xl transition-all duration-300 border-none bg-white">
         <div className="relative h-40 w-full">
           <Image
-            src={sector.image}
+            src={imageSrc}
             alt={sector.name}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-500"
