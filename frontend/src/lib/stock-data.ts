@@ -46,6 +46,12 @@ export interface ChatResponse {
   sources: ChatSource[];
 }
 
+export interface LlmModel {
+  name: string;
+  modified_at?: string;
+  size?: number;
+}
+
 export interface SearchResult {
   ticker: string;
   name: string;
@@ -462,16 +468,25 @@ export async function fetchAssetForecast(ticker: string, model: string, horizon:
   return apiFetch<AssetForecast>(`/forecast/?ticker=${encodeURIComponent(ticker)}&model=${encodeURIComponent(model)}&horizon=${encodeURIComponent(horizon)}`);
 }
 
-export async function chatWithStocks(query: string): Promise<ChatResponse> {
+export async function chatWithStocks(query: string, model?: string, embedModel?: string, baseUrl?: string): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE}/chatbot/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, model, embed_model: embedModel, base_url: baseUrl }),
     cache: 'no-store',
   });
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.error || `API error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchLlmModels(baseUrl?: string): Promise<{ base_url: string; models: LlmModel[] }> {
+  const url = baseUrl ? `${API_BASE}/llm/models/?base_url=${encodeURIComponent(baseUrl)}` : `${API_BASE}/llm/models/`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Failed to load models (${res.status})`);
   }
   return res.json();
 }

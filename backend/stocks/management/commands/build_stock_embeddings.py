@@ -1,5 +1,5 @@
 """
-Generate/refresh pgvector embeddings for stocks using Gemini embeddings.
+Generate/refresh pgvector embeddings for stocks using Ollama embeddings.
 
 Usage:
     python manage.py build_stock_embeddings
@@ -10,7 +10,7 @@ import logging
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from stocks.chatbot import GeminiClient
+from stocks.chatbot import OllamaClient, DEFAULT_EMBED_MODEL
 from stocks.models import Stock, StockEmbedding
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def _stock_context(stock: Stock) -> str:
 
 
 class Command(BaseCommand):
-    help = "Create or refresh stock embeddings for the chatbot (uses GEMINI_API_KEY)."
+    help = "Create or refresh stock embeddings for the chatbot (uses Ollama)."
 
     def add_arguments(self, parser):
         parser.add_argument('--limit', type=int, help='Limit number of stocks to embed')
@@ -41,11 +41,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        api_key = None  # rely on env
-        try:
-            client = GeminiClient(api_key)
-        except ValueError as exc:
-            raise CommandError(str(exc))
+        client = OllamaClient()
 
         qs = Stock.objects.order_by('id')
         if options.get('limit'):
@@ -58,14 +54,18 @@ class Command(BaseCommand):
         self.stdout.write(f"Building embeddings for {total} stocks...")
         success = 0
         failures = 0
+        expected_dim = None
         for stock in qs:
             if not options['force'] and hasattr(stock, "vector") and stock.vector.embedding:
                 continue
             try:
                 context = _stock_context(stock)
-                embedding = client.embed_text(context)
-                if len(embedding) != 3072:
-                    raise ValueError(f"Expected 3072-dim embedding, got {len(embedding)}")
+                embedding = client.embed_text(context, model=DEFAULT_EMBED_MODEL)
+                expected_dim = expected_dim or len(embedding)
+                if len(embedding) != expected_dim:
+                    raise ValueError(f"Embedding dimension changed mid-run ({len(embedding)} vs {expected_dim})")
+                if expected_dim != 1024:
+                    self.stdout.write(self.style.WARNING(f"Embedding dimension is {expected_dim}; ensure model matches DB field (1024)."))
                 with transaction.atomic():
                     StockEmbedding.objects.update_or_create(
                         stock=stock,
@@ -82,7 +82,7 @@ class Command(BaseCommand):
                 max_failures = options.get('max_failures') or 0
                 if max_failures and failures >= max_failures:
                     raise CommandError(
-                        f"Aborting after {failures} failures. Check GEMINI_EMBED_MODEL/GEMINI_API_KEY."
+                        f"Aborting after {failures} failures. Check OLLAMA_BASE_URL/OLLAMA_EMBED_MODEL and that Ollama is running."
                     )
                 continue
 

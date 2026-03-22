@@ -44,6 +44,7 @@ urlpatterns = [
 
     # Chatbot (RAG + Gemini)
     path('chatbot/', views.chat_with_stocks, name='chatbot'),
+    path('llm/models/', views.list_ollama_models, name='llm-models'),
 
     # Search
     path('search/', views.stock_search, name='stock-search'),

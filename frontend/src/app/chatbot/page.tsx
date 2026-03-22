@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navigation from "@/components/Navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Loader2, MessageCircle, ShieldAlert, Sparkles } from "lucide-react";
-import { chatWithStocks, ChatResponse } from "@/lib/stock-data";
+import { chatWithStocks, ChatResponse, fetchLlmModels, LlmModel } from "@/lib/stock-data";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 
 const starterPrompts = [
   "What is the risk level for TCS vs INFY this month?",
@@ -20,6 +22,30 @@ export default function ChatbotPage() {
   const [answer, setAnswer] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<LlmModel[]>([]);
+  const [model, setModel] = useState<string>("");
+  const [embedModel, setEmbedModel] = useState<string>("qwen3-embedding:0.6b");
+  const [baseUrl, setBaseUrl] = useState<string>("");
+  const [modelLoading, setModelLoading] = useState(false);
+
+  const loadModels = async (url?: string) => {
+    setModelLoading(true);
+    try {
+      const data = await fetchLlmModels(url);
+      setModels(data.models || []);
+      const preferred = data.models?.find((m) => m.name?.includes("tinyllama")) || data.models?.[0];
+      setModel(preferred?.name || "");
+      setBaseUrl(data.base_url || url || "");
+    } catch (e: any) {
+      setError(e.message || "Failed to load models");
+    } finally {
+      setModelLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadModels();
+  }, []);
 
   const ask = async () => {
     if (!query.trim()) {
@@ -29,7 +55,7 @@ export default function ChatbotPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await chatWithStocks(query.trim());
+      const res = await chatWithStocks(query.trim(), model || undefined, embedModel || undefined, baseUrl || undefined);
       setAnswer(res);
     } catch (e: any) {
       setError(e.message || "Something went wrong");
@@ -59,6 +85,44 @@ export default function ChatbotPage() {
               placeholder="e.g., Compare RELIANCE.NS and TCS.NS for the next month and suggest buy/hold/sell."
               rows={4}
             />
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-slate-600">Chat model (Ollama)</label>
+                <Select value={model} onValueChange={setModel} disabled={modelLoading || models.length === 0}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={modelLoading ? "Loading..." : "Select model"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.name} value={m.name || ""}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-slate-600">Embed model</label>
+                <Input
+                  value={embedModel}
+                  onChange={(e) => setEmbedModel(e.target.value)}
+                  placeholder="nomic-embed-text"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-slate-600">Ollama base URL</label>
+                <div className="flex gap-2">
+                  <Input
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="http://localhost:11434"
+                  />
+                  <Button type="button" variant="secondary" onClick={() => loadModels(baseUrl)} disabled={modelLoading}>
+                    {modelLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+                  </Button>
+                </div>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               {starterPrompts.map((p) => (
                 <Button

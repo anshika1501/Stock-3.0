@@ -127,8 +127,8 @@ class StockEmbedding(models.Model):
         related_name='vector',
     )
     context = models.TextField(help_text="Concise description and metrics used for embeddings")
-    # Gemini text-embedding-004 currently returns 3072-d vectors
-    embedding = VectorField(dimensions=3072, null=True, blank=True)
+    # Defaulting to 1024 dims to align with qwen3-embedding:0.6b (Ollama)
+    embedding = VectorField(dimensions=1024, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

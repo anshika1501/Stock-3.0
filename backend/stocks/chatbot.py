@@ -1,85 +1,78 @@
 import logging
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import requests
-from django.db.models import F
 from pgvector.django import CosineDistance
 
 from .models import StockEmbedding, Stock
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
-GEMINI_EMBED_MODEL = os.environ.get("GEMINI_EMBED_MODEL", "models/gemini-embedding-001")
-GEMINI_CHAT_MODEL = os.environ.get("GEMINI_CHAT_MODEL", "models/gemini-2.0-flash")
+DEFAULT_OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+DEFAULT_CHAT_MODEL = os.environ.get("OLLAMA_CHAT_MODEL", "tinyllama")
+DEFAULT_EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
 
 
-class GeminiClient:
-    def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY is missing.")
+class OllamaClient:
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = (base_url or DEFAULT_OLLAMA_BASE).rstrip("/")
 
-    @staticmethod
-    def _model_path(model: str) -> str:
-        return model if model.startswith("models/") else f"models/{model}"
+    def _post(self, url: str, payload: Dict[str, Any], timeout: int) -> Dict[str, Any]:
+        resp = requests.post(url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
 
-    def _post(self, url: str, payload: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
-        import time
-        headers = {"x-goog-api-key": self.api_key}
-        for attempt in range(max_retries):
-            resp = requests.post(url, json=payload, timeout=40, headers=headers)
-            try:
-                resp.raise_for_status()
-                return resp.json()
-            except requests.HTTPError as exc:
-                if resp.status_code == 429 and attempt < max_retries - 1:
-                    logger.warning("Rate limited by Gemini API (429). Retrying in 5 seconds...")
-                    time.sleep(5)
-                    continue
-                if resp.status_code == 404:
-                    raise ValueError(
-                        "Gemini API returned 404. Check GEMINI_EMBED_MODEL/GEMINI_CHAT_MODEL "
-                        "and verify the API key has access to the model."
-                    ) from exc
-                if resp.status_code == 429:
-                    raise ValueError(
-                        "Gemini API rate limit exceeded (429). You have made too many requests. Please wait a minute and try again."
-                    ) from exc
+    def embed_text(self, text: str, model: str = DEFAULT_EMBED_MODEL) -> List[float]:
+        api_url = f"{self.base_url}/api/embeddings"
+        payload = {"model": model, "prompt": text}
+        try:
+            data = self._post(api_url, payload, timeout=60)
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                openai_url = f"{self.base_url}/v1/embeddings"
+                openai_payload = {"model": model, "input": text}
+                data = self._post(openai_url, openai_payload, timeout=60)
+            else:
                 raise
 
-    def embed_text(self, text: str) -> List[float]:
-        model = self._model_path(GEMINI_EMBED_MODEL)
-        url = f"{GEMINI_API_BASE}/{model}:embedContent"
-        payload = {
-            "model": model,
-            "content": {"parts": [{"text": text}]},
-        }
-        data = self._post(url, payload)
-        embedding = data.get("embedding", {}).get("values")
+        embedding = data.get("embedding")
+        if embedding:
+            return embedding
+
+        data_items = data.get("data") or []
+        if data_items and isinstance(data_items, list):
+            embedding = data_items[0].get("embedding")
         if not embedding:
-            raise ValueError("Gemini embedding response was empty.")
+            raise ValueError("Ollama embedding response was empty.")
         return embedding
 
-    def generate(self, prompt: str, context: str, question: str) -> str:
-        model = self._model_path(GEMINI_CHAT_MODEL)
-        url = f"{GEMINI_API_BASE}/{model}:generateContent"
-        user_message = f"{prompt}\n\nContext:\n{context}\n\nUser question:\n{question}\n\nRespond clearly and concisely."
+    def list_models(self) -> List[Dict[str, Any]]:
+        url = f"{self.base_url}/api/tags"
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("models", [])
+
+    def generate(self, prompt: str, context: str, question: str, model: str = DEFAULT_CHAT_MODEL) -> str:
+        url = f"{self.base_url}/api/chat"
+        full_prompt = f"{prompt}\n\nContext:\n{context}\n\nUser question:\n{question}\n\nRespond clearly and concisely."
         payload = {
             "model": model,
-            "contents": [
-                {"role": "user", "parts": [{"text": user_message}]},
+            "messages": [
+                {"role": "system", "content": "You are StockCompass AI."},
+                {"role": "user", "content": full_prompt},
             ],
+            "stream": False,
         }
-        data = self._post(url, payload)
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise ValueError("Gemini returned no candidates.")
-        parts = candidates[0].get("content", {}).get("parts", [])
-        if not parts:
-            raise ValueError("Gemini response had no parts.")
-        return parts[0].get("text", "").strip()
+        resp = requests.post(url, json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        message = data.get("message") or {}
+        content = message.get("content", "").strip()
+        if not content:
+            raise ValueError("Ollama returned an empty message.")
+        return content
 
 
 def _compute_risk(stock: Stock) -> str:
@@ -99,11 +92,11 @@ def _compute_risk(stock: Stock) -> str:
 class ChatAdvisorService:
     """
     Provides a RAG-style chatbot that uses pgvector for similarity search
-    and Gemini for generation.
+    and Ollama for generation.
     """
 
-    def __init__(self, api_key: str | None = None):
-        self.gemini = GeminiClient(api_key)
+    def __init__(self, base_url: Optional[str] = None):
+        self.ollama = OllamaClient(base_url)
 
     def _nearest_stocks(self, query_embedding: List[float], top_k: int = 5):
         return (
@@ -124,11 +117,17 @@ class ChatAdvisorService:
             )
         return "\n".join(lines)
 
-    def answer(self, question: str) -> Dict[str, Any]:
+    def answer(self, question: str, chat_model: Optional[str] = None, embed_model: Optional[str] = None, base_url: Optional[str] = None) -> Dict[str, Any]:
         if not question or not question.strip():
             raise ValueError("Query cannot be empty.")
 
-        query_vec = self.gemini.embed_text(question.strip())
+        if base_url:
+            self.ollama = OllamaClient(base_url)
+
+        embed_model_use = embed_model or DEFAULT_EMBED_MODEL
+        chat_model_use = chat_model or DEFAULT_CHAT_MODEL
+
+        query_vec = self.ollama.embed_text(question.strip(), model=embed_model_use)
         matches = list(self._nearest_stocks(query_vec, top_k=6))
         if not matches:
             raise ValueError("No embeddings available. Run build_stock_embeddings first.")
@@ -144,7 +143,7 @@ class ChatAdvisorService:
             "Keep it concise (<= 180 words) and include a brief disclaimer."
         )
 
-        answer_text = self.gemini.generate(prompt, context, question)
+        answer_text = self.ollama.generate(prompt, context, question, model=chat_model_use)
         sources = [
             {
                 "symbol": emb.stock.symbol,

@@ -5,7 +5,7 @@ from django.db.models import Q
 from django.core.cache import cache
 from .models import StockCategory, Stock
 from .services import StockDataService
-from .chatbot import ChatAdvisorService
+from .chatbot import ChatAdvisorService, OllamaClient, DEFAULT_CHAT_MODEL, DEFAULT_EMBED_MODEL, DEFAULT_OLLAMA_BASE
 from .analytics import (
     search_live_stocks,
     fetch_live_stock_detail,
@@ -2055,15 +2055,47 @@ def evaluate_predictions(request):
 def chat_with_stocks(request):
     """
     POST /api/chatbot/
-    Body: { "query": "Should I buy TCS or Infosys?" }
+    Body: { "query": "...", "model": "tinyllama", "embed_model": "nomic-embed-text", "base_url": "http://localhost:11434" }
     """
     question = request.data.get('query') if isinstance(request.data, dict) else None
     if not question or not str(question).strip():
         return Response({'error': 'query is required'}, status=400)
 
+    chat_model = request.data.get('model') if isinstance(request.data, dict) else None
+    embed_model = request.data.get('embed_model') if isinstance(request.data, dict) else None
+    base_url = request.data.get('base_url') if isinstance(request.data, dict) else None
+
     try:
-        result = ChatAdvisorService().answer(str(question))
+        result = ChatAdvisorService().answer(
+            str(question),
+            chat_model=chat_model,
+            embed_model=embed_model,
+            base_url=base_url,
+        )
         return Response(result)
     except Exception as exc:
         logger.error("Chatbot error: %s", exc)
+        return Response({'error': str(exc)}, status=500)
+
+
+@api_view(['GET'])
+def list_ollama_models(request):
+    """
+    GET /api/llm/models/ - returns installed Ollama models
+    """
+    try:
+        base_url = request.query_params.get('base_url') or DEFAULT_OLLAMA_BASE
+        client = OllamaClient(base_url)
+        models = client.list_models()
+        simplified = [
+            {
+                "name": m.get("name"),
+                "modified_at": m.get("modified_at"),
+                "size": m.get("size"),
+            }
+            for m in models
+        ]
+        return Response({"base_url": base_url, "models": simplified})
+    except Exception as exc:
+        logger.error("list_ollama_models error: %s", exc)
         return Response({'error': str(exc)}, status=500)
