@@ -38,18 +38,29 @@ export default function Navigation() {
       }
     }
 
-    // Check auth on mount
-    const storedUser = localStorage.getItem("stock_compass_user");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem("stock_compass_user");
+    // Check auth
+    const checkAuth = () => {
+      const storedUser = localStorage.getItem("stock_compass_user");
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch {
+          localStorage.removeItem("stock_compass_user");
+          setUser(null);
+        }
+      } else {
+        setUser(null);
       }
-    }
+    };
+
+    checkAuth();
+    window.addEventListener("auth_change", checkAuth);
 
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("auth_change", checkAuth);
+    };
   }, []);
 
   const handleSearch = (value: string) => {
@@ -90,6 +101,7 @@ export default function Navigation() {
     localStorage.removeItem("stock_compass_token");
     setUser(null);
     setShowUserMenu(false);
+    window.dispatchEvent(new Event("auth_change"));
     router.push("/");
   };
 
@@ -103,79 +115,85 @@ export default function Navigation() {
           <span className="text-xl font-headline font-bold text-primary tracking-tight">StockCompass</span>
         </Link>
 
-        <div className="hidden md:flex flex-1 max-w-md mx-8 relative" ref={wrapperRef}>
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
-          <Input
-            placeholder="Search stocks, tickers..."
-            className="pl-10 bg-secondary/50 border-none focus-visible:ring-primary"
-            value={query}
-            onChange={(e) => handleSearch(e.target.value)}
-            onFocus={() => results.length > 0 && setShowDropdown(true)}
-          />
-          {showDropdown && results.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border max-h-80 overflow-y-auto z-50">
-              {results.map((r) => (
-                <button
-                  key={r.ticker}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
-                  onClick={() => handleSelect(r.ticker)}
-                >
-                  <div>
-                    <span className="font-bold text-primary mr-2">{r.ticker}</span>
-                    <span className="text-sm text-muted-foreground">{r.name}</span>
-                  </div>
-                  {r.exchange && <span className="text-xs text-muted-foreground">{r.exchange}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          {showDropdown && results.length === 0 && !loading && query.length >= 1 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border z-50">
-              <div className="px-4 py-3 text-sm text-muted-foreground">No results found</div>
-            </div>
-          )}
-        </div>
+        {user && (
+          <div className="hidden md:flex flex-1 max-w-md mx-8 relative" ref={wrapperRef}>
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            {loading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+            <Input
+              placeholder="Search stocks, tickers..."
+              className="pl-10 bg-secondary/50 border-none focus-visible:ring-primary"
+              value={query}
+              onChange={(e) => handleSearch(e.target.value)}
+              onFocus={() => results.length > 0 && setShowDropdown(true)}
+            />
+            {showDropdown && results.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border max-h-80 overflow-y-auto z-50">
+                {results.map((r) => (
+                  <button
+                    key={r.ticker}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-secondary/50 transition-colors text-left"
+                    onClick={() => handleSelect(r.ticker)}
+                  >
+                    <div>
+                      <span className="font-bold text-primary mr-2">{r.ticker}</span>
+                      <span className="text-sm text-muted-foreground">{r.name}</span>
+                    </div>
+                    {r.exchange && <span className="text-xs text-muted-foreground">{r.exchange}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {showDropdown && results.length === 0 && !loading && query.length >= 1 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border z-50">
+                <div className="px-4 py-3 text-sm text-muted-foreground">No results found</div>
+              </div>
+            )}
+          </div>
+        )}
 
         <nav className="flex items-center gap-6">
-          <Link href="/portfolios" className="text-sm font-medium hover:text-primary transition-colors">Portfolios</Link>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
-              Markets <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              <DropdownMenuItem asChild>
-                <Link href="/stocks" className="w-full cursor-pointer">Nifty 50</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/gold-silver" className="w-full cursor-pointer">Bitcoin, Gold &amp; Silver</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/compare" className="w-full cursor-pointer">Compare Assets</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {user && (
+            <>
+              <Link href="/portfolios" className="text-sm font-medium hover:text-primary transition-colors">Portfolios</Link>
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
+                  Markets <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuItem asChild>
+                    <Link href="/stocks" className="w-full cursor-pointer">Nifty 50</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/gold-silver" className="w-full cursor-pointer">Bitcoin, Gold &amp; Silver</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/compare" className="w-full cursor-pointer">Compare Assets</Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1.5 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
-              <Sparkles className="h-4 w-4 text-primary" />
-              AI Tools <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              <DropdownMenuItem asChild>
-                <Link href="/nifty50-pca" className="w-full cursor-pointer">Stock Analysis (PCA)</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/sentiment" className="w-full cursor-pointer">Sentiment Analysis</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/stock-prediction" className="w-full cursor-pointer">Stock Prediction</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex items-center gap-1.5 text-sm font-medium hover:text-primary transition-colors outline-none cursor-pointer">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  AI Tools <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuItem asChild>
+                    <Link href="/nifty50-pca" className="w-full cursor-pointer">Stock Analysis (PCA)</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/sentiment" className="w-full cursor-pointer">Sentiment Analysis</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/stock-prediction" className="w-full cursor-pointer">Stock Prediction</Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-          <div className="h-4 w-px bg-border mx-2 hidden sm:block"></div>
+              <div className="h-4 w-px bg-border mx-2 hidden sm:block"></div>
+            </>
+          )}
 
           {user ? (
             <div className="relative" ref={userMenuRef}>

@@ -49,6 +49,7 @@ export function LoginClient() {
             if (typeof window !== "undefined") {
                 localStorage.setItem("stock_compass_user", JSON.stringify(data.user));
                 localStorage.setItem("stock_compass_token", data.token);
+                window.dispatchEvent(new Event("auth_change"));
             }
 
             // Redirect
