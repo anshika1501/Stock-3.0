@@ -10,8 +10,9 @@ from .models import StockEmbedding, Stock
 
 logger = logging.getLogger(__name__)
 
-GEMINI_EMBED_MODEL = "models/text-embedding-004"
-GEMINI_CHAT_MODEL = "models/gemini-1.5-flash"
+GEMINI_API_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+GEMINI_EMBED_MODEL = os.environ.get("GEMINI_EMBED_MODEL", "models/gemini-embedding-001")
+GEMINI_CHAT_MODEL = os.environ.get("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash")
 
 
 class GeminiClient:
@@ -20,15 +21,29 @@ class GeminiClient:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is missing.")
 
+    @staticmethod
+    def _model_path(model: str) -> str:
+        return model if model.startswith("models/") else f"models/{model}"
+
     def _post(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        resp = requests.post(url, json=payload, timeout=40)
-        resp.raise_for_status()
+        headers = {"x-goog-api-key": self.api_key}
+        resp = requests.post(url, json=payload, timeout=40, headers=headers)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            if resp.status_code == 404:
+                raise ValueError(
+                    "Gemini API returned 404. Check GEMINI_EMBED_MODEL/GEMINI_CHAT_MODEL "
+                    "and verify the API key has access to the model."
+                ) from exc
+            raise
         return resp.json()
 
     def embed_text(self, text: str) -> List[float]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/{GEMINI_EMBED_MODEL}:embedContent?key={self.api_key}"
+        model = self._model_path(GEMINI_EMBED_MODEL)
+        url = f"{GEMINI_API_BASE}/{model}:embedContent"
         payload = {
-            "model": GEMINI_EMBED_MODEL,
+            "model": model,
             "content": {"parts": [{"text": text}]},
         }
         data = self._post(url, payload)
@@ -38,10 +53,11 @@ class GeminiClient:
         return embedding
 
     def generate(self, prompt: str, context: str, question: str) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/{GEMINI_CHAT_MODEL}:generateContent?key={self.api_key}"
+        model = self._model_path(GEMINI_CHAT_MODEL)
+        url = f"{GEMINI_API_BASE}/{model}:generateContent"
         user_message = f"{prompt}\n\nContext:\n{context}\n\nUser question:\n{question}\n\nRespond clearly and concisely."
         payload = {
-            "model": GEMINI_CHAT_MODEL,
+            "model": model,
             "contents": [
                 {"role": "user", "parts": [{"text": user_message}]},
             ],

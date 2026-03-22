@@ -1,6 +1,6 @@
 from django.db import models
 from django.utils import timezone
-from pgvector.django import VectorField, HnswIndex
+from pgvector.django import VectorField
 
 
 class StockCategory(models.Model):
@@ -127,18 +127,13 @@ class StockEmbedding(models.Model):
         related_name='vector',
     )
     context = models.TextField(help_text="Concise description and metrics used for embeddings")
-    embedding = VectorField(dimensions=768, null=True, blank=True)
+    # Gemini text-embedding-004 currently returns 3072-d vectors
+    embedding = VectorField(dimensions=3072, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-updated_at']
-        indexes = [
-            HnswIndex(
-                fields=['embedding'],
-                name='idx_stock_embedding_hnsw',
-                opclasses=['vector_cosine_ops'],
-            ),
-        ]
+        indexes = []
 
     def __str__(self):
         return f"Embedding for {self.stock.symbol}"
