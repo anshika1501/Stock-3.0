@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 GEMINI_API_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
 GEMINI_EMBED_MODEL = os.environ.get("GEMINI_EMBED_MODEL", "models/gemini-embedding-001")
-GEMINI_CHAT_MODEL = os.environ.get("GEMINI_CHAT_MODEL", "models/gemini-1.5-flash")
+GEMINI_CHAT_MODEL = os.environ.get("GEMINI_CHAT_MODEL", "models/gemini-2.0-flash")
 
 
 class GeminiClient:
@@ -25,19 +25,29 @@ class GeminiClient:
     def _model_path(model: str) -> str:
         return model if model.startswith("models/") else f"models/{model}"
 
-    def _post(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _post(self, url: str, payload: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+        import time
         headers = {"x-goog-api-key": self.api_key}
-        resp = requests.post(url, json=payload, timeout=40, headers=headers)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as exc:
-            if resp.status_code == 404:
-                raise ValueError(
-                    "Gemini API returned 404. Check GEMINI_EMBED_MODEL/GEMINI_CHAT_MODEL "
-                    "and verify the API key has access to the model."
-                ) from exc
-            raise
-        return resp.json()
+        for attempt in range(max_retries):
+            resp = requests.post(url, json=payload, timeout=40, headers=headers)
+            try:
+                resp.raise_for_status()
+                return resp.json()
+            except requests.HTTPError as exc:
+                if resp.status_code == 429 and attempt < max_retries - 1:
+                    logger.warning("Rate limited by Gemini API (429). Retrying in 5 seconds...")
+                    time.sleep(5)
+                    continue
+                if resp.status_code == 404:
+                    raise ValueError(
+                        "Gemini API returned 404. Check GEMINI_EMBED_MODEL/GEMINI_CHAT_MODEL "
+                        "and verify the API key has access to the model."
+                    ) from exc
+                if resp.status_code == 429:
+                    raise ValueError(
+                        "Gemini API rate limit exceeded (429). You have made too many requests. Please wait a minute and try again."
+                    ) from exc
+                raise
 
     def embed_text(self, text: str) -> List[float]:
         model = self._model_path(GEMINI_EMBED_MODEL)
