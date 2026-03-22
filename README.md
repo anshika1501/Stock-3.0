@@ -14,12 +14,14 @@ Before you begin, ensure you have the following installed on your machine:
 - npm or yarn
 - [Python](https://www.python.org/) 3.10+
 - Git
+- [PostgreSQL](https://www.postgresql.org/) 14+ (with pgvector extension)
+- [Ollama](https://ollama.com/download) (for local LLM + embeddings)
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Backend Setup (Django + Python)
+### 1. Backend Setup (Django + Python + Postgres + Ollama)
 
 The backend exposes the core API, handles stock data retrieval (via yfinance), and runs the predictive models.
 
@@ -45,12 +47,90 @@ The backend exposes the core API, handles stock data retrieval (via yfinance), a
    pip install -r requirements.txt
    ```
 
-4. **Apply database migrations:**
+4. **Configure environment variables (`backend/.env`):**
+   ```env
+   DJANGO_SECRET_KEY=change-me
+   DJANGO_DEBUG=True
+   DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
+
+   POSTGRES_DB=stocks
+   POSTGRES_USER=stocks_user
+   POSTGRES_PASSWORD=change-me
+   POSTGRES_HOST=localhost
+   POSTGRES_PORT=5432
+   DJANGO_DB_ENGINE=postgresql
+
+   # Ollama defaults (local)
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_CHAT_MODEL=tinyllama
+   OLLAMA_EMBED_MODEL=qwen3-embedding:0.6b
+   ```
+
+5. **Prepare PostgreSQL with pgvector (choose one)**
+
+   **Option A — Local Postgres install**
+   - Start Postgres and create DB/user (adjust credentials as needed):
+     ```sql
+     CREATE DATABASE stocks;
+     CREATE USER stocks_user WITH PASSWORD 'change-me';
+     GRANT ALL PRIVILEGES ON DATABASE stocks TO stocks_user;
+     ALTER DATABASE stocks OWNER TO stocks_user;
+     \c stocks
+     ALTER SCHEMA public OWNER TO stocks_user;
+     GRANT ALL ON SCHEMA public TO stocks_user;
+     GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO stocks_user;
+     GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO stocks_user;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO stocks_user;
+     ```
+   - Enable pgvector inside the DB:
+     ```sql
+     \c stocks
+     CREATE EXTENSION IF NOT EXISTS vector;
+     ```
+
+   **Option B — Dockerized pgvector (PG16)**
+   ```bash
+   docker pull pgvector/pgvector:pg16
+   docker run -d --name pgvector-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg16
+   docker exec -it pgvector-db psql -U postgres -d postgres
+   ```
+   Then inside psql:
+   ```sql
+   CREATE DATABASE stocks;
+   CREATE USER stocks_user WITH PASSWORD 'change-me';
+   GRANT ALL PRIVILEGES ON DATABASE stocks TO stocks_user;
+   ALTER DATABASE stocks OWNER TO stocks_user;
+   \c stocks
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ALTER SCHEMA public OWNER TO stocks_user;
+   GRANT ALL ON SCHEMA public TO stocks_user;
+   GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO stocks_user;
+   GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO stocks_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO stocks_user;
+   ```
+
+6. **Install Ollama (WSL/mac/Linux) and pull required models**
+   - Install Ollama (WSL-friendly):
+     ```bash
+     curl -fsSL https://ollama.com/install.sh | sh
+     ```
+   - Pull models:
+   ```bash
+   ollama pull tinyllama
+   ollama pull qwen3-embedding:0.6b
+   ```
+
+7. **Apply database migrations:**
    ```bash
    python manage.py migrate
    ```
 
-5. **Start the Django development server:**
+8. **Build vector embeddings (uses Ollama embed model):**
+   ```bash
+   python manage.py build_stock_embeddings --force
+   ```
+
+9. **Start the Django development server:**
    ```bash
    python manage.py runserver
    ```
@@ -101,7 +181,7 @@ The frontend uses environment variables to dictate base paths for API requests.
 **Frontend (`frontend/.env.local`)**
 - `NEXT_PUBLIC_API_URL`: The root URL attached to all backend API calls (e.g., login, registering, fetching trajectory datasets). When running locally, this should always be `http://127.0.0.1:8000/api`.
 
-*(If any backend specific environment variables are introduced later—such as database URLs or secret keys—they should be configured in a `.env` file inside the `backend/` folder).*
+*(Backend environment variables live in `backend/.env` as shown above).*
 
 ---
 
